@@ -52,7 +52,8 @@ public class Main {
                 if ("ping".equals(content)) {
                     writer.write("pong\r\n");
                 } else {
-                    writer.write(content);
+                    System.out.println(content+"\r\n");
+                    writer.write(content+"\r\n");
                 }
                 writer.flush();
             }

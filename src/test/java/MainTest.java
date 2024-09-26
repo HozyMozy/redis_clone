@@ -12,12 +12,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 public class MainTest {
     private Thread serverThread;
+
     @BeforeEach
     void setUp() throws Exception {
         serverThread = new Thread(() -> Main.startServer(6379));
         serverThread.start();
-
-        Thread.sleep(500);
     }
 
     @AfterEach
@@ -32,12 +31,30 @@ public class MainTest {
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
         BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 
-        writer.write("ping\r\n");
+        writer.write("ping\n");
         writer.flush();
 
         String response = reader.readLine();
         assertEquals("pong", response);
 
+        clientSocket.close();
+    }
+
+    @Test
+    void testEchoResponse() throws Exception {
+        System.out.println("Testing echo response");
+        Socket clientSocket = new Socket("localhost", 6379);
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
+        BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+
+        writer.write("echo\n");
+        writer.flush();
+
+        System.out.println("Sending echo ping");
+        String response;
+        response = reader.readLine();
+        System.out.println(response);
+        assertEquals("echo", response);
         clientSocket.close();
     }
 }
