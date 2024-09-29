@@ -35,30 +35,32 @@ public class MainTest {
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
         BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 
-        writer.write("ping\n");
+        writer.write("*1\r\n$4\r\nPING\r\n");
+        writer.write("*1\r\n$4\r\nPING\r\n");
         writer.flush();
 
         String response = reader.readLine();
-        assertEquals("pong", response);
+        String response2 = reader.readLine();
+        assertEquals("+PONG", response);
+        assertEquals("+PONG", response2);
 
         clientSocket.close();
     }
 
     @Test
-    void testEchoResponse() throws Exception {
-        System.out.println("Testing echo response");
+    void testPingMessageResponse() throws Exception {
         Socket clientSocket = new Socket("localhost", 6379);
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
         BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 
-        writer.write("echo\n");
+        writer.write("*2\r\n$4\r\nECHO\r\n$11\r\nhello world\r\n");
         writer.flush();
 
-        System.out.println("Sending echo ping");
-        String response;
+        String response, response2;
         response = reader.readLine();
-        System.out.println(response);
-        assertEquals("echo", response);
+        response2 = reader.readLine();
+        assertEquals("$11", response);
+        assertEquals("hello world", response2);
         clientSocket.close();
     }
 
@@ -73,7 +75,7 @@ public class MainTest {
                 try (Socket clientSocket = new Socket("localhost", 6379);
                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
                 BufferedReader reader = new BufferedReader( new InputStreamReader(clientSocket.getInputStream()))) {
-                    writer.write("ping\r\n");
+                    writer.write("*1\r\n$4\r\nPING\r\n");
                     writer.flush();
                     return reader.readLine();
                 }
@@ -82,10 +84,11 @@ public class MainTest {
         }
 
         for (Future<String> result : results) {
-            assertEquals("pong", result.get());
+            assertEquals("+PONG", result.get());
         }
 
         executor.shutdown();
 
     }
+
 }

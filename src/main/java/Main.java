@@ -1,7 +1,9 @@
 import java.io.*;
-import java.net.*;
-import java.nio.ByteBuffer;
-import java.nio.channels.SocketChannel;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -13,7 +15,8 @@ public class Main {
     private static volatile boolean running = true;
     private static final int PORT = 6379;
     private static final int BUFFER_SIZE = 1024;
-    private static ExecutorService threadPool = Executors.newCachedThreadPool(); // Use a thread pool to manage client threads
+    private static ExecutorService threadPool = Executors.newCachedThreadPool();// Use a thread pool to manage client threads
+    private static ConcurrentHashMap<String, String> setStore = new ConcurrentHashMap<>();
 
     /**
      * Uses blocking threads to manage concurrent clients
@@ -47,38 +50,64 @@ public class Main {
      * @param clientSocket the connected client socket
      */
     private static void handleClient(Socket clientSocket) {
-        try {
-            InputStream inputStream = clientSocket.getInputStream();
-            OutputStream outputStream = clientSocket.getOutputStream();
-            ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
+        try (
+                BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
+        ) {
+            List<Object> commands = null;
+            String message;
+            while (running && (((commands = parserCommand(reader))) != null)) {
+                String command = (String) commands.get(0);
+                System.out.println("Received command: " + command);
+                switch (command.toLowerCase()) {
+                    case "ping":
+                        writer.write("+PONG\r\n");
+                        break;
+                    case "echo":
+                        writer.write(String.join("\r\n", commands.stream().skip(1).toArray(String[]::new))
+                                + "\r\n");
+                        break;
+                    case "set":
+                        writer.write("+OK\r\n");
+                        String key = (String) commands.get(2);
+                        setStore.put(key, String.join("\r\n", commands.stream().skip(3).toArray(String[]::new))
+                                + "\r\n");
+                        break;
+                    case "get":
+                        key = (String) commands.get(2);
+                        writer.write(setStore.getOrDefault(key, "$-1\r\n"));
+                        break;
+                    default:
+                        return;
 
-            while (running && !clientSocket.isClosed()) {
-                // Read data from the client
-                int bytesRead = inputStream.read(buffer.array());
-
-                if (bytesRead == -1) {
-                    System.out.println("Connection closed by client: " + clientSocket.getRemoteSocketAddress());
-                    break;
                 }
+                writer.flush();
+            }
 
-                String message = new String(buffer.array(), 0, bytesRead).trim();
+            /*
+            while (running && !clientSocket.isClosed() && (message = reader.readLine()) != null) {
                 System.out.println("Received message from " + clientSocket.getRemoteSocketAddress() + ": " + message);
 
                 // Respond to 'ping' command
-                if ("ping".equalsIgnoreCase(message)) {
-                    outputStream.write("pong\r\n".getBytes());
-                    outputStream.flush();
+                if (message.startsWith("PING")) {
+                    String[] parts = message.split(" ", 2);
+                    if (parts.length == 2) {
+                        writer.write("$" + parts[1].length() + "\r\n" + parts[1] + "\r\n");
+                    } else {
+                        writer.write("+PONG\r\n");
+                    }
                 } else {
-                    outputStream.write((message + "\r\n").getBytes());
-                    outputStream.flush();
+                    writer.write("+UNKNOWN\r\n");
                 }
 
-                buffer.clear(); // Clear the buffer for the next read
+                writer.flush(); // Ensure the message is sent to the client
             }
+             */
         } catch (IOException e) {
             System.out.println("IOException: " + e);
         } finally {
             try {
+                System.out.println("Closing connection for " + clientSocket.getRemoteSocketAddress());
                 clientSocket.close();
             } catch (IOException e) {
                 System.out.println("Error closing client socket: " + e);
@@ -98,5 +127,54 @@ public class Main {
 
         // Gracefully shutdown the thread pool
         threadPool.shutdown();
+    }
+
+    public static List<Object> parserCommand(BufferedReader in) {
+        List<Object> ret = new ArrayList<>();
+        try {
+            String line1 = in.readLine();
+            if (line1 == null) {
+                ret.add("exit");
+                return ret;
+            }
+            if (line1.charAt(0) != '*') {
+                throw new RuntimeException("ERR command must be an array ");
+            }
+            int nEle = Integer.parseInt(line1.substring(1));
+            System.out.println("Skipped: " + in.readLine());          // skip len - 2nd line
+            ret.add(in.readLine()); // read command - 3rd line
+            System.out.println("Received command " + ret.get(0) +
+                    ", number of element " + nEle);
+            // read data
+            String line = null;
+            for (int i = 1; i < nEle && (line = in.readLine()) != null; i++) {
+                if (line.isEmpty())
+                    continue;
+                char type = line.charAt(0);
+                switch (type) {
+                    case '$':
+                        System.out.println("parse bulk string: " + line);
+                        ret.add(line);
+                        ret.add(in.readLine());
+                        break;
+                    case ':':
+                        System.out.println("parse int: " + line);
+                        ret.add(String.valueOf(type));
+                        ret.add(Integer.parseInt(line.substring(1)));
+                        break;
+                    default:
+                        System.out.println("default: " + line);
+                        break;
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Parse failed " + e.getMessage());
+            throw new RuntimeException(e);
+        } catch (Exception e) {
+            System.out.println("Parse failed " + e.getMessage());
+        }
+        System.out.println("Command: " +
+                String.join(" ", ret.stream().toArray(String[]::new)));
+        return ret;
     }
 }
