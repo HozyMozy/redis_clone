@@ -91,4 +91,20 @@ public class MainTest {
 
     }
 
+    @Test
+    void testSetGet() throws Exception {
+        Socket clientSocket = new Socket("localhost", 6379);
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(clientSocket.getOutputStream()));
+        BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+        writer.write("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n");
+        writer.flush();
+        String response = reader.readLine();
+        assertEquals("+OK", response);
+        writer.write("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n");
+        writer.flush();
+        reader.readLine();
+        response = reader.readLine();
+        assertEquals("bar", response);
+    }
+
 }
